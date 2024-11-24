@@ -6,19 +6,16 @@
   <title>YouTube Activity Share</title>
   <link rel="stylesheet" href="styles.css">
   <script src="https://apis.google.com/js/api.js"></script>
-  <script src="app.js" defer></script> <!-- Your JavaScript file -->
+  <script src="app.js" defer></script>
 </head>
 <body>
   <div class="container">
     <h1>YouTube Activity Share</h1>
-
-    <!-- Authentication Buttons -->
     <button id="signinBtn" onclick="handleAuthClick()">Sign In with Google</button>
     <button id="signoutBtn" onclick="handleSignoutClick()" style="display:none;">Sign Out</button>
-
     <h2>Your Recently Watched Videos:</h2>
     <ul id="videoList">
-      <!-- Dynamic list of videos will be populated here -->
+      <!-- Videos will load here -->
     </ul>
   </div>
 </body>

@@ -6,115 +6,159 @@ let secrets;
 try {
   secrets = yaml.load(fs.readFileSync('secrets.yml', 'utf8'));
 } catch (e) {
-  console.error(e);
+  console.error("Error loading secrets.yml:", e);
 }
 
 // Access the API key and Client ID from secrets
-const apiKey = secrets.api_key;
-const clientId = secrets.client_id;
+const API_KEY = secrets.api_key;
+const CLIENT_ID = secrets.client_id;
 
-console.log(apiKey, clientId);  // Test logging the values (but don't log in production)
+console.log(API_KEY, CLIENT_ID); // Test logging the values (remove in production)
 
 // Initialize Google API client
 function initClient() {
-  gapi.client.init({
-    apiKey: apiKey,
-    clientId: clientId,
-    scope: 'https://www.googleapis.com/auth/youtube.readonly', // YouTube Read-Only Access
-    discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/youtube/v3/rest'],
-    redirect_uri: 'http://127.0.0.1:5500/' // Ensure this matches the redirect URI in Google Cloud Console
-  }).then(function() {
-    // Check if the user is signed in
-    const authInstance = gapi.auth2.getAuthInstance();
-    if (authInstance.isSignedIn.get()) {
-      console.log("User is signed in");
-      fetchUserData();  // Fetch YouTube activity if the user is signed in
-    } else {
-      // Show the sign-in button if the user is not signed in
-      document.getElementById('signinBtn').style.display = 'inline-block';
-    }
-  }).catch(function(error) {
-    console.log("Error initializing client:", error);
-  });
+  gapi.client
+    .init({
+      apiKey: API_KEY,
+      clientId: CLIENT_ID,
+      scope: "https://www.googleapis.com/auth/youtube.readonly",
+      discoveryDocs: ["https://www.googleapis.com/discovery/v1/apis/youtube/v3/rest"],
+    })
+    .then(() => {
+      console.log("Google API client initialized");
+      const authInstance = gapi.auth2.getAuthInstance();
+      updateSigninStatus(authInstance.isSignedIn.get());
+      authInstance.isSignedIn.listen(updateSigninStatus);
+    })
+    .catch((err) => {
+      console.error("Error initializing Google API client:", err);
+    });
 }
 
-// Load the Google API client and authentication library
+// Load the Google API client library
 function loadClient() {
-  gapi.load('client:auth2', initClient);
+  gapi.load("client:auth2", initClient);
 }
 
-// Sign in the user when the "Sign In" button is clicked
-function signIn() {
-  gapi.auth2.getAuthInstance().signIn({
-    prompt: 'select_account' // Ensure this does not conflict with your Google account settings
-  }).then(function() {
-    console.log("User signed in successfully");
-    fetchUserData();  // Fetch YouTube activity after successful sign-in
-  }).catch(function(error) {
-    console.log("Error during sign-in:", error);
-  });
+// Handle user sign-in
+function handleAuthClick() {
+  console.log("Sign-in button clicked. Initiating sign-in...");
+  gapi.auth2
+    .getAuthInstance()
+    .signIn()
+    .then(() => {
+      console.log("User signed in successfully.");
+      fetchUserData();
+    })
+    .catch((err) => {
+      console.error("Error during sign-in:", err);
+    });
 }
 
+// Handle user sign-out
+function handleSignoutClick() {
+  console.log("Sign-out button clicked. Signing out...");
+  gapi.auth2
+    .getAuthInstance()
+    .signOut()
+    .then(() => {
+      console.log("User signed out successfully.");
+      updateSigninStatus(false);
+    })
+    .catch((err) => {
+      console.error("Error during sign-out:", err);
+    });
+}
 
-// Sign out the user when the "Sign Out" button is clicked
-function signOut() {
-  gapi.auth2.getAuthInstance().signOut().then(function() {
-    console.log("User signed out successfully");
-    document.getElementById('signinBtn').style.display = 'inline-block';
-    document.getElementById('signoutBtn').style.display = 'none';
-  }).catch(function(error) {
-    console.log("Error during sign-out:", error);
-  });
+// Update the UI based on sign-in status
+function updateSigninStatus(isSignedIn) {
+  console.log("Sign-in status changed:", isSignedIn);
+  if (isSignedIn) {
+    console.log("User is signed in.");
+    document.getElementById("signinBtn").style.display = "none";
+    document.getElementById("signoutBtn").style.display = "inline-block";
+    fetchUserData();
+  } else {
+    console.log("User is not signed in.");
+    document.getElementById("signinBtn").style.display = "inline-block";
+    document.getElementById("signoutBtn").style.display = "none";
+  }
 }
 
 // Fetch the user's YouTube activity
 function fetchUserData() {
-  const request = gapi.client.youtube.activities.list({
-    part: 'snippet,contentDetails',
-    mine: true
-  });
+  console.log("Attempting to fetch user data...");
+  gapi.client.youtube.activities
+    .list({
+      part: "snippet,contentDetails",
+      mine: true,
+    })
+    .then((response) => {
+      console.log("User data fetched successfully:", response);
+      const activities = response.result.items || [];
+      updateVideoList(
+        activities.map((item) => ({
+          id: item.contentDetails?.upload?.videoId || null,
+          snippet: item.snippet,
+        }))
+      );
+    })
+    .catch((err) => {
+      console.error("Error fetching user data:", err);
+    });
+}
 
-  request.execute(function(response) {
-    if (response.error) {
-      console.error("Error fetching user data:", response.error);
-      return;
-    }
+// Update the video list in the UI
+function updateVideoList(videos) {
+  const videoList = document.getElementById("videoList");
+  videoList.innerHTML = ""; // Clear existing content
+  if (videos.length === 0) {
+    videoList.innerHTML = "<li>No recent activities found.</li>";
+    return;
+  }
 
-    // Display the activity (e.g., the videos user has been watching)
-    const activities = response.items;
-    let output = '<h3>Your Recent YouTube Activity:</h3>';
-    if (activities && activities.length > 0) {
-      activities.forEach(activity => {
-        output += `
-          <div class="activity">
-            <h4>${activity.snippet.title}</h4>
-            <p>Type: ${activity.snippet.type}</p>
-            <p><a href="https://www.youtube.com/watch?v=${activity.contentDetails.upload.videoId}" target="_blank">Watch Video</a></p>
-          </div>
-        `;
-      });
+  videos.forEach((video) => {
+    const listItem = document.createElement("li");
+    if (video.id) {
+      listItem.innerHTML = `<a href="https://www.youtube.com/watch?v=${video.id}" target="_blank">${video.snippet.title}</a>`;
     } else {
-      output += '<p>No recent activities found.</p>';
+      listItem.textContent = video.snippet.title;
     }
-
-    // Display the activity on the page
-    document.getElementById('activityList').innerHTML = output;
-
-    // Hide the sign-in button and show the sign-out button
-    document.getElementById('signinBtn').style.display = 'none';
-    document.getElementById('signoutBtn').style.display = 'inline-block';
+    videoList.appendChild(listItem);
   });
 }
 
-// HTML to render the sign-in and sign-out buttons
-document.body.innerHTML = `
-  <div id="app">
-    <h2>Share Your YouTube Activity</h2>
-    <button id="signinBtn" onclick="signIn()" style="display: inline-block;">Sign In with Google</button>
-    <button id="signoutBtn" onclick="signOut()" style="display: none;">Sign Out</button>
-    <div id="activityList"></div>
-  </div>
-`;
+// Initialize the app when the page loads
+window.onload = () => {
+  console.log("Loading Google API client...");
+  loadClient();
+};
 
-// Load the client and initiate the sign-in process
+function fetchUserData() {
+  gapi.client.youtube.activities.list({
+    part: 'snippet,contentDetails',
+    mine: true
+  }).then(response => {
+    const activities = response.result.items;
+    updateVideoList(activities.map(item => ({
+      id: item.contentDetails.upload.videoId,
+      snippet: item.snippet
+    })));
+  }).catch(err => console.error("Error fetching user data:", err));
+}
+
+function updateVideoList(videos) {
+  const videoList = document.getElementById('videoList');
+  videoList.innerHTML = '';
+  if (videos && videos.length > 0) {
+    videos.forEach(video => {
+      const listItem = document.createElement('li');
+      listItem.innerHTML = `<a href="https://www.youtube.com/watch?v=${video.id}" target="_blank">${video.snippet.title}</a>`;
+      videoList.appendChild(listItem);
+    });
+  } else {
+    videoList.innerHTML = '<li>No videos found.</li>';
+  }
+}
+
 loadClient();
