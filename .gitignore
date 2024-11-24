@@ -1,0 +1,2 @@
+# Ignore secrets.yml to avoid exposing sensitive keys
+secrets.yml
